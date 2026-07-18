@@ -403,8 +403,8 @@ class LLMService:
                 headers={
                     "Authorization": f"Bearer {self._api_key}",
                     "Content-Type": "application/json",
-                    "HTTP-Referer": "https://github.com/oclp",
-                    "X-Title": "oclp",
+                    "HTTP-Referer": "https://github.com/cupagent",
+                    "X-Title": "cupagent",
                 },
                 timeout=aiohttp.ClientTimeout(total=60),
             )

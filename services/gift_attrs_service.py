@@ -104,7 +104,7 @@ class GiftAttrsService:
 
     @staticmethod
     def _cache_key(slug: str, number: int) -> str:
-        """Build a Redis key: ``oclp:giftattrs:<slug>:<number>``."""
+        """Build a Redis key: ``cupagent:giftattrs:<slug>:<number>``."""
         safe_slug = slug.replace(":", "_").lower()
         return f"{REDIS_GIFTATTRS_KEY_PREFIX}:{safe_slug}:{int(number)}"
 

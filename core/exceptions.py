@@ -1,39 +1,39 @@
 from __future__ import annotations
 
 
-class oclpError(Exception):
+class cupagentError(Exception):
     """Base exception for the application."""
 
 
-class MarketAuthError(oclpError):
+class MarketAuthError(cupagentError):
     """Failed to authenticate with a marketplace API."""
 
 
-class MarketApiError(oclpError):
+class MarketApiError(cupagentError):
     """Marketplace API returned an error or unexpected response."""
 
 
-class CacheError(oclpError):
+class CacheError(cupagentError):
     """Redis cache operation failed."""
 
 
-class GiftAttrsError(oclpError):
+class GiftAttrsError(cupagentError):
     """Failed to fetch or parse a Telegram collectible gift page."""
 
 
-class DatabaseError(oclpError):
+class DatabaseError(cupagentError):
     """Database operation failed."""
 
 
-class SessionExpiredError(oclpError):
+class SessionExpiredError(cupagentError):
     """Telegram initData has expired and needs refresh."""
 
 
-class ConfigError(oclpError):
+class ConfigError(cupagentError):
     """Missing or invalid configuration."""
 
 
-class LLMError(oclpError):
+class LLMError(cupagentError):
     """LLM provider returned an error or unexpected response."""
 
 

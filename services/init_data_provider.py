@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # Telegram initData validity is ~24h. We cache shorter and refresh early.
 _CACHE_TTL = 23 * 3600          # 23h — max time we trust a cached value
 _REFRESH_MARGIN = 3600          # refresh if less than 1h remains
-_REDIS_KEY = "oclp:init_data:{bot}"
+_REDIS_KEY = "cupagent:init_data:{bot}"
 
 
 class InitDataProvider(Protocol):
@@ -287,7 +287,7 @@ class KurigramInitDataProvider:
                 ) from e
 
         self._client = Client(
-            name="oclp",
+            name="cupagent",
             api_id=self._api_id,
             api_hash=self._api_hash,
             session_string=self._session_string,

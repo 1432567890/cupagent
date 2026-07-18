@@ -37,9 +37,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Redis keys
-_THREAD_KEY = "oclp:guest_thread:{thread_id}"
-_MSG_INDEX_KEY = "oclp:guest_msg:{chat_id}:{message_id}"
-_CHAT_ACTIVE_THREAD_KEY = "oclp:guest_chat_thread:{chat_id}"
+_THREAD_KEY = "cupagent:guest_thread:{thread_id}"
+_MSG_INDEX_KEY = "cupagent:guest_msg:{chat_id}:{message_id}"
+_CHAT_ACTIVE_THREAD_KEY = "cupagent:guest_chat_thread:{chat_id}"
 
 # Limits
 _THREAD_TTL = 3 * 24 * 3600  # 3 дня

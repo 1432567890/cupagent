@@ -32,7 +32,7 @@ from core.constants import (
     REDIS_CRYPTO_KEY,
     REDIS_FIAT_KEY_PREFIX,
 )
-from core.exceptions import oclpError
+from core.exceptions import cupagentError
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class CryptoError(oclpError):
+class CryptoError(cupagentError):
     """Crypto / fiat conversion error."""
 
 

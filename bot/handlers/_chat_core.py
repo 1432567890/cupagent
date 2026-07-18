@@ -32,7 +32,7 @@ from services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
 
-_HISTORY_KEY = "oclp:chat_history:{user_id}"
+_HISTORY_KEY = "cupagent:chat_history:{user_id}"
 _HISTORY_TTL = 3600  # 1 hour
 _MAX_TURNS = 10  # 5 user + 5 assistant messages
 

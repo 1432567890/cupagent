@@ -1,25 +1,25 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: oclp-postgres
+    container_name: cupagent-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: oclp
+      POSTGRES_DB: cupagent
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d oclp"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cupagent"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: oclp-redis
+    container_name: cupagent-redis
     restart: unless-stopped
     ports:
       - "6379:6379"

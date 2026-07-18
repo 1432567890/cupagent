@@ -32,8 +32,8 @@ from aiogram.types import Message, TelegramObject
 
 logger = logging.getLogger(__name__)
 
-_REDIS_KEY = "oclp:antispam:{user_id}:{hash}"
-_REDIS_BLOCK_KEY = "oclp:antispam:block:{user_id}"
+_REDIS_KEY = "cupagent:antispam:{user_id}:{hash}"
+_REDIS_BLOCK_KEY = "cupagent:antispam:block:{user_id}"
 
 
 def _msg_hash(text: str) -> str:
