@@ -29,7 +29,7 @@ from core.constants import (
     GIFTWIKI_SEARCH_TTL,
     REDIS_GIFTWIKI_KEY_PREFIX,
 )
-from core.exceptions import CupagentError
+from core.exceptions import oclpError
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class GiftWikiError(CupagentError):
+class GiftWikiError(oclpError):
     """GiftWiki API error."""
 
 
@@ -107,7 +107,7 @@ class GiftWikiService:
 
     @staticmethod
     def _cache_key(kind: str, *parts: str) -> str:
-        """Build a Redis key: ``cupagent:giftwiki:<kind>:<parts>``."""
+        """Build a Redis key: ``oclp:giftwiki:<kind>:<parts>``."""
         safe = ":".join(str(p).replace(":", "_") for p in parts if p)
         return f"{REDIS_GIFTWIKI_KEY_PREFIX}:{kind}:{safe}"
 

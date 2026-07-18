@@ -20,11 +20,11 @@ GIFTWIKI_BASE_URL = "https://api.giftwiki.tg"
 TELEGRAM_NFT_BASE_URL = "https://t.me/nft"
 
 # Redis key prefixes
-REDIS_KEY_PREFIX = "cupagent:floor_price"
-REDIS_CRYPTO_KEY = "cupagent:crypto:prices"
-REDIS_FIAT_KEY_PREFIX = "cupagent:fiat"
-REDIS_GIFTWIKI_KEY_PREFIX = "cupagent:giftwiki"
-REDIS_GIFTATTRS_KEY_PREFIX = "cupagent:giftattrs"
+REDIS_KEY_PREFIX = "oclp:floor_price"
+REDIS_CRYPTO_KEY = "oclp:crypto:prices"
+REDIS_FIAT_KEY_PREFIX = "oclp:fiat"
+REDIS_GIFTWIKI_KEY_PREFIX = "oclp:giftwiki"
+REDIS_GIFTATTRS_KEY_PREFIX = "oclp:giftattrs"
 
 # Default parse mode for Telegram messages
 DEFAULT_PARSE_MODE = "HTML"

@@ -13,7 +13,7 @@ async def cmd_start(message: Message) -> None:
     """Handle /start command — greet the user."""
     await message.answer(
         "Привет! 👋\n\n"
-        "Я <b>cupagent</b> — бот для мониторинга цен подарков на маркетплейсах.\n\n"
+        "Я <b>oclp</b> — бот для мониторинга цен подарков на маркетплейсах.\n\n"
         "Доступные команды:\n"
         "• /start — приветствие\n"
         "• /prices — текущие флор-цены\n"

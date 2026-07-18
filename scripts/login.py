@@ -38,7 +38,7 @@ async def _do_login(api_id: int, api_hash: str, store: SessionStore) -> None:
 
     # Use a throwaway in-memory client to perform the interactive login.
     client = Client(
-        name="cupagent_login",
+        name="oclp_login",
         api_id=api_id,
         api_hash=api_hash,
         in_memory=True,

@@ -1,6 +1,6 @@
 """Redis cache for floor prices.
 
-Key pattern: cupagent:floor_price:{market}:{gift_name}
+Key pattern: oclp:floor_price:{market}:{gift_name}
 Value: JSON {"price": float|null, "updated_at": ISO string}
 TTL: 10 minutes (double the update interval for safety margin).
 
@@ -40,7 +40,7 @@ def _serialize(price: FloorPrice) -> str:
 def _deserialize(key: str, value: str) -> FloorPrice:
     data = json.loads(value)
     parts = key.split(":")
-    # key format: cupagent:floor_price:{market}:{gift_name}
+    # key format: oclp:floor_price:{market}:{gift_name}
     market = MarketName(parts[2])
     gift_name = ":".join(parts[3:])  # handle names with colons
     return FloorPrice(

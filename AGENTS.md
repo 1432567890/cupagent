@@ -23,7 +23,7 @@
 
 ### Project Structure
 ```
-cupagent/
+oclp/
 ├── bot/                    # Telegram bot layer (aiogram 3)
 │   ├── handlers/           # Message/callback handlers
 │   ├── middlewares/         # Auth, logging, error handling

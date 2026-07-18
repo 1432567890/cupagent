@@ -9,7 +9,7 @@ Only applies to free-text chat (the LLM path). Commands (/start, /prices)
 and non-Message updates are passed through unchanged.
 
 Design:
-- Redis key: ``cupagent:rate:{user_id}`` — a sorted set of recent
+- Redis key: ``oclp:rate:{user_id}`` — a sorted set of recent
   message timestamps. We trim entries older than the window and count
   the remainder. The key is given a TTL of ``window_seconds`` so it
   expires automatically when the user stops messaging.
@@ -31,7 +31,7 @@ from aiogram.types import Message, TelegramObject
 
 logger = logging.getLogger(__name__)
 
-_REDIS_KEY = "cupagent:rate:{user_id}"
+_REDIS_KEY = "oclp:rate:{user_id}"
 
 
 class RateLimitMiddleware(BaseMiddleware):
