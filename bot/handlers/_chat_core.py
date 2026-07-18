@@ -585,17 +585,25 @@ def extract_reply_context(message: "Message") -> str:
 def build_reply_text(user_text: str, reply_context: str) -> str:
     """Build the final user prompt including reply context.
 
-    If the user replied to a message, prepend its text so the LLM has the
-    full picture:
+    When the user replies to a message, we inject the replied-to text as
+    an explicit ``<quoted_message>`` block BEFORE the user's own text, so
+    phrases like «перескажи это сообщение» / «что тут написано?» refer
+    unambiguously to the quoted block.
 
-        ``[В ответ на: <replied-to text>]\n<user message>``
+    Example output::
+
+        <quoted_message>
+        ну так долго не протянуть
+        </quoted_message>
+
+        перескажи текст этого сообщения
 
     If there is no reply context the original ``user_text`` is returned
     unchanged.
     """
     if not reply_context:
         return user_text
-    return f"[в ответ на: {reply_context}]\n{user_text}"
+    return f"<quoted_message>\n{reply_context}\n</quoted_message>\n\n{user_text}"
 
 
 async def _load_history(redis: Redis, user_id: int) -> list[dict[str, str]]:
