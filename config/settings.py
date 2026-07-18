@@ -80,14 +80,15 @@ class Settings(BaseSettings):
         "nvidia/nemotron-3-super:free"
     )
 
-    # ── Anti-spam (duplicate / rapid-fire messages) ──
-    # Drop a user's message if it's byte-identical to one they sent in the
-    # last N seconds (catches "spam the same question" patterns).
+    # ── Anti-spam (obvious flood only) ──
+    # Only blocks a user who sends the SAME message `threshold` times
+    # within `window` seconds. Ordinary conversation (re-asking a
+    # question, several different messages) is NEVER blocked — the
+    # middleware targets classic spam floods, not legit users.
     ANTISPAM_DUPLICATE_WINDOW: int = 60
-    # Hard-block a user for this many seconds once they've sent the same
-    # message ANTISPAM_DUPLICATE_THRESHOLD times within the window.
-    ANTISPAM_DUPLICATE_THRESHOLD: int = 3
-    ANTISPAM_BLOCK_SECONDS: int = 300
+    # How many identical messages in the window trigger a hard-block.
+    ANTISPAM_DUPLICATE_THRESHOLD: int = 10
+    ANTISPAM_BLOCK_SECONDS: int = 120
 
     # ── GiftWiki API (https://api.giftwiki.tg/docs, X-API-Key header) ──
     GIFTWIKI_TOKEN: str = ""
