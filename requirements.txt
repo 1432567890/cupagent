@@ -1,0 +1,11 @@
+aiogram==3.29.1
+aiohttp==3.11.11
+asyncpg==0.30.0
+redis[hiredis]==5.2.1
+pydantic-settings==2.7.1
+structlog==24.4.0
+alembic==1.14.1
+SQLAlchemy[asyncio]==2.0.36
+greenlet>=3.2.0
+kurigram==2.2.24
+TgCrypto==1.2.5
