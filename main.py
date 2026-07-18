@@ -37,6 +37,9 @@ async def _init_db(settings) -> tuple[Any, Any]:
         database=settings.POSTGRES_DB,
         min_size=2,
         max_size=10,
+        # Local Docker postgres runs without SSL — explicitly disable it
+        # to avoid TLS-handshake failures (WinError 1225 / ConnectionReset).
+        ssl=False,
     )
     repo = FloorPriceRepo(pool)
     await repo.init_db()
