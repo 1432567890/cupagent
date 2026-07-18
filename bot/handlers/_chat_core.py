@@ -94,8 +94,17 @@ async def typing_action_loop(bot: Bot, chat_id: int) -> None:
 
 # Pattern: decimal number that looks like a price (not inside existing tags).
 # Matches N.NN or N,NN formats — typical floor prices.
+#
+# Date / version rejection: a price stands alone, dates and version strings
+# don't. The lookbehind blocks matches that start right after a ``.`` or
+# ``,`` (so the middle group of ``18.07.26`` can't match), and the
+# lookahead blocks matches followed by another ``.`` + digit (so the first
+# group of ``18.07.26`` can't match either). A list separator ``,`` after
+# the fraction IS allowed — e.g. ``price 33.77, mrkt 41.31`` wraps both.
 _PRICE_DECIMAL_RE = re.compile(
-    r"(?<![<\w])(\d{1,6}[.,]\d{1,2})(?![\w])"
+    r"(?<![<\w.,\d])"
+    r"(\d{1,6}[.,]\d{1,2})"
+    r"(?![\w.])"
 )
 
 # Currency words that, when following a number, mark it as a price.
