@@ -38,3 +38,27 @@ FIAT_RATES_TTL = 21600        # 6h   — fiat updates once a day
 GIFTWIKI_SEARCH_TTL = 600     # 10 min
 GIFTWIKI_DETAIL_TTL = 3600    # 1h
 GIFTATTRS_TTL = 86400        # 24h — gift attributes are immutable
+
+# Rating-based rate-limit tiers (Telegram Star spending level → cooldown).
+# Each entry maps a rating level range to the minimum seconds between
+# consecutive free-text (LLM) requests from that user.
+# Accessed via ``ChatFullInfo.rating.level`` (int, 0+).
+# Lower level → stricter limit; higher level → more generous.
+RATING_RATE_LIMITS: list[tuple[int, int, float]] = [
+    # (min_level, max_level, cooldown_seconds)
+    (0,  0,  300.0),   # level 0  → 1 request per 5 min
+    (1,  1,   60.0),   # level 1  → 1 request per 1 min
+    (2,  5,   10.0),   # level 2–5 → 1 request per 10 sec
+    (6, 999, 1.0),     # level 6+  → 1 request per 1 sec
+]
+
+# Redis key for storing the timestamp of a user's last allowed request.
+# {user_id} is replaced with the numeric Telegram user ID.
+RATING_RATE_LIMIT_KEY = "cupagent:rating_rate:{user_id}"
+
+# Redis key for caching a user's rating level to avoid calling get_chat
+# on every single message.
+RATING_LEVEL_CACHE_KEY = "cupagent:rating_level:{user_id}"
+
+# TTL for the rating-level cache (seconds).
+RATING_LEVEL_CACHE_TTL = 3600  # 1 hour

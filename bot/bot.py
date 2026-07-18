@@ -18,6 +18,7 @@ from bot.handlers.prices import router as prices_router
 from bot.handlers.chat import router as chat_router
 from bot.handlers.guest_chat import router as guest_chat_router
 from bot.middleware.duplicate_spam import DuplicateSpamMiddleware
+from bot.middleware.rating_rate_limit import RatingRateLimitMiddleware
 from bot.middleware.rate_limit import RateLimitMiddleware
 from bot.middleware.whitelist import WhitelistMiddleware
 from bot.middlewares import DefaultParseModeMiddleware
@@ -69,6 +70,7 @@ def create_bot(
     messages_router = Router(name="messages")
     # aiogram 3: register message-level middleware
     messages_router.message.middleware(WhitelistMiddleware(whitelist))
+    messages_router.message.middleware(RatingRateLimitMiddleware(redis=redis))
     messages_router.message.middleware(
         RateLimitMiddleware(
             redis,
@@ -88,6 +90,7 @@ def create_bot(
     # the same whitelist + rate limit + antispam — the event object is
     # still a Message.
     messages_router.guest_message.middleware(WhitelistMiddleware(whitelist))
+    messages_router.guest_message.middleware(RatingRateLimitMiddleware(redis=redis))
     messages_router.guest_message.middleware(
         RateLimitMiddleware(
             redis,
