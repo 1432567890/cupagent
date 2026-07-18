@@ -23,6 +23,8 @@ from bot.handlers._chat_core import (
     LLM_ERROR_TEXT,
     THINKING_TEXT,
     apply_ghost_format,
+    build_reply_text,
+    extract_reply_context,
     generate_reply,
     is_free_text,
     typing_action_loop,
@@ -57,6 +59,11 @@ async def handle_chat(
     user_text = message.text or ""
     user_id = message.from_user.id if message.from_user else 0
     chat_id = message.chat.id
+
+    # Include reply context if the user replied to another message.
+    reply_ctx = extract_reply_context(message)
+    if reply_ctx:
+        user_text = build_reply_text(user_text, reply_ctx)
 
     # Send initial "думаю..." placeholder as a reply to the user message
     status_msg = await message.answer(

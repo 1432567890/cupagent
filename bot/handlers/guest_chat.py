@@ -34,6 +34,8 @@ from bot.handlers._chat_core import (
     LLM_ERROR_TEXT,
     THINKING_TEXT,
     apply_ghost_format_inline,
+    build_reply_text,
+    extract_reply_context,
     is_free_text,
 )
 from bot.handlers._guest_thread import (
@@ -95,6 +97,11 @@ async def handle_guest_chat(
     user_id = message.from_user.id if message.from_user else 0
     chat_id = message.chat.id if message.chat else 0
     message_id = message.message_id
+
+    # Include reply context if the user replied to another message.
+    reply_ctx = extract_reply_context(message)
+    if reply_ctx:
+        user_text = build_reply_text(user_text, reply_ctx)
 
     # answer_guest_query must be the FIRST call — guest_query_id expires
     # fast (~30-60s, like inline queries), so any Redis work before it

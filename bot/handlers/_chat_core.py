@@ -552,6 +552,52 @@ def is_free_text(text: str | None) -> bool:
     return bool(text) and not text.startswith("/")
 
 
+# Maximum length of the reply-context text injected into the user prompt.
+# ~500 tokens ≈ ~1500–2000 characters for Russian text; we use a conservative
+# character limit to stay safely under the token budget.
+_REPLY_CONTEXT_MAX_CHARS = 2000
+
+
+def extract_reply_context(message: "Message") -> str:
+    """Extract the text of the message being replied to, if any.
+
+    When the user sends a guest message (or any message) as a reply to
+    another message, that replied-to message's text provides important
+    context for the LLM. This helper extracts it, strips HTML tags and
+    truncates to ``_REPLY_CONTEXT_MAX_CHARS`` characters.
+
+    Returns:
+        The replied-to text (may be empty string if no reply or no text).
+    """
+    reply = message.reply_to_message
+    if reply is None:
+        return ""
+    text = (reply.text or "").strip()
+    if not text:
+        return ""
+    # Strip any HTML/Caption entities — we want plain text for context.
+    text = re.sub(r"<[^>]+>", "", text).strip()
+    if len(text) > _REPLY_CONTEXT_MAX_CHARS:
+        text = text[:_REPLY_CONTEXT_MAX_CHARS] + "…"
+    return text
+
+
+def build_reply_text(user_text: str, reply_context: str) -> str:
+    """Build the final user prompt including reply context.
+
+    If the user replied to a message, prepend its text so the LLM has the
+    full picture:
+
+        ``[В ответ на: <replied-to text>]\n<user message>``
+
+    If there is no reply context the original ``user_text`` is returned
+    unchanged.
+    """
+    if not reply_context:
+        return user_text
+    return f"[в ответ на: {reply_context}]\n{user_text}"
+
+
 async def _load_history(redis: Redis, user_id: int) -> list[dict[str, str]]:
     """Load recent conversation history for a user."""
     raw = await redis.get(_HISTORY_KEY.format(user_id=user_id))
