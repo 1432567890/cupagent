@@ -51,7 +51,7 @@ def _build_keyboard(message: Message) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text=label,
-                    switch_inline_query_chat=query,
+                    switch_inline_query=query,
                 ),
             ],
         ],
