@@ -32,6 +32,34 @@ services:
       timeout: 5s
       retries: 5
 
+  bot:
+    build: .
+    container_name: cupagent-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Inside the Docker network the DB/Redis are reached by service name,
+      # not "localhost" (which would point at the bot container itself).
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cupagent
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Persist the Kurigram session file across rebuilds.
+      - ./user/session:/app/user/session
+      # Persist skills/data if present.
+      - ./skills:/app/skills
+      - ./data:/app/data
+
 volumes:
   pgdata:
   redisdata:

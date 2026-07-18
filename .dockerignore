@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments — never copy into the image
+.venv/
+venv/
+env/
+
+# Local environment files (passed via env_file in docker-compose instead)
+.env
+.env.*
+!.env.example
+
+# Version control
+.git/
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker artifacts
+docker-compose.yml
+docker-compose.override.yml
+Dockerfile
+.dockerignore
+
+# Kurigram session file (mounted as a volume instead)
+user/session/__pycache__/
+
+# Logs
+*.log
+
+# Local DB files
+*.db
+*.sqlite3
+
+# Data dir is mounted as a volume
+data/
