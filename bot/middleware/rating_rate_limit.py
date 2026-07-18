@@ -176,7 +176,13 @@ class RatingRateLimitMiddleware(BaseMiddleware):
 
         Uses a simple Redis key storing the timestamp of the last allowed
         request. If the key is missing or expired, the user is allowed.
+
+        A cooldown of ``0`` (or negative) means "no limit" — returns True
+        immediately and skips the Redis round-trip entirely.
         """
+        if cooldown <= 0:
+            return True  # no limit configured for this tier
+
         key = RATING_RATE_LIMIT_KEY.format(user_id=user_id)
         now = time.time()
 

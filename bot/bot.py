@@ -17,9 +17,11 @@ from bot.handlers.start import router as start_router
 from bot.handlers.prices import router as prices_router
 from bot.handlers.chat import router as chat_router
 from bot.handlers.guest_chat import router as guest_chat_router
+from bot.handlers.users import router as users_router
 from bot.middleware.duplicate_spam import DuplicateSpamMiddleware
 from bot.middleware.rating_rate_limit import RatingRateLimitMiddleware
 from bot.middleware.rate_limit import RateLimitMiddleware
+from bot.middleware.user_tracker import UserTrackerMiddleware
 from bot.middleware.whitelist import WhitelistMiddleware
 from bot.middlewares import DefaultParseModeMiddleware
 
@@ -31,6 +33,7 @@ def create_bot(
     *,
     whitelist: set[int] | None = None,
     redis: Any = None,
+    user_repo: Any = None,
     rate_limit_max: int = 5,
     rate_limit_window: int = 15,
     antispam_duplicate_window: int = 60,
@@ -43,6 +46,8 @@ def create_bot(
         token: Telegram bot token from @BotFather.
         whitelist: Optional set of allowed user IDs. None = open mode.
         redis: Optional Redis client for rate-limiter and anti-spam.
+        user_repo: Optional ``UserRepo`` for tracking users that message
+            the bot. If None, user tracking is disabled.
         rate_limit_max: Max free-text messages per user in the window.
         rate_limit_window: Sliding-window size in seconds.
         antispam_duplicate_window: Seconds to remember recent messages for
@@ -66,9 +71,12 @@ def create_bot(
     # Register outer middlewares (run on every update)
     dp.update.outer_middleware(DefaultParseModeMiddleware(parse_mode="HTML"))
 
-    # Build a messages router with whitelist + rate-limit + antispam gating
+    # Build a messages router with user-tracker + whitelist + rate-limit + antispam gating
     messages_router = Router(name="messages")
     # aiogram 3: register message-level middleware
+    # UserTracker goes FIRST so it sees every message (even those later
+    # dropped by whitelist/antispam) — tracks all users who ever wrote.
+    messages_router.message.middleware(UserTrackerMiddleware(user_repo))
     messages_router.message.middleware(WhitelistMiddleware(whitelist))
     messages_router.message.middleware(RatingRateLimitMiddleware(redis=redis))
     messages_router.message.middleware(
@@ -87,8 +95,9 @@ def create_bot(
         )
     )
     # Guest messages (Telegram Business / managed chats) also go through
-    # the same whitelist + rate limit + antispam — the event object is
-    # still a Message.
+    # the same user-tracker + whitelist + rate limit + antispam — the event
+    # object is still a Message.
+    messages_router.guest_message.middleware(UserTrackerMiddleware(user_repo))
     messages_router.guest_message.middleware(WhitelistMiddleware(whitelist))
     messages_router.guest_message.middleware(RatingRateLimitMiddleware(redis=redis))
     messages_router.guest_message.middleware(
@@ -112,6 +121,7 @@ def create_bot(
     messages_router.include_router(prices_router)
     messages_router.include_router(chat_router)
     messages_router.include_router(guest_chat_router)
+    messages_router.include_router(users_router)
 
     dp.include_router(messages_router)
 

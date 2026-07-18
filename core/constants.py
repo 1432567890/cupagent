@@ -46,10 +46,10 @@ GIFTATTRS_TTL = 86400        # 24h — gift attributes are immutable
 # Lower level → stricter limit; higher level → more generous.
 RATING_RATE_LIMITS: list[tuple[int, int, float]] = [
     # (min_level, max_level, cooldown_seconds)
-    (0,  0,  300.0),   # level 0  → 1 request per 5 min
-    (1,  1,   60.0),   # level 1  → 1 request per 1 min
-    (2,  5,   10.0),   # level 2–5 → 1 request per 10 sec
-    (6, 999, 1.0),     # level 6+  → 1 request per 1 sec
+    (0,  0,   60.0),   # level 0  → 1 request per 1 min
+    (1,  1,   20.0),   # level 1  → 1 request per 20 sec
+    (2,  5,    5.0),   # level 2–5 → 1 request per 5 sec
+    (6, 999,   0.0),   # level 6+  → no limit (0 = disabled)
 ]
 
 # Redis key for storing the timestamp of a user's last allowed request.

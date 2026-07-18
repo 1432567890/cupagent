@@ -24,10 +24,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def _init_db(settings) -> tuple[Any, Any]:
-    """Initialize database connection pool and create tables."""
+async def _init_db(settings) -> tuple[Any, Any, Any]:
+    """Initialize database connection pool and create tables.
+
+    Returns ``(floor_price_repo, user_repo, pool)`` so callers can wire
+    both repositories into the bot and dispatcher.
+    """
     import asyncpg
     from db.repo import FloorPriceRepo
+    from db.user_repo import UserRepo
 
     pool = await asyncpg.create_pool(
         host=settings.POSTGRES_HOST,
@@ -41,9 +46,11 @@ async def _init_db(settings) -> tuple[Any, Any]:
         # to avoid TLS-handshake failures (WinError 1225 / ConnectionReset).
         ssl=False,
     )
-    repo = FloorPriceRepo(pool)
-    await repo.init_db()
-    return repo, pool
+    floor_price_repo = FloorPriceRepo(pool)
+    user_repo = UserRepo(pool)
+    await floor_price_repo.init_db()
+    await user_repo.init_db()
+    return floor_price_repo, user_repo, pool
 
 
 async def _init_cache(settings) -> tuple[Any, Any]:
@@ -210,7 +217,7 @@ async def run_bot() -> None:
 
     # ── DB ──
     logger.info("Initializing database...")
-    repo, db_pool = await _init_db(settings)
+    repo, user_repo, db_pool = await _init_db(settings)
 
     # ── Redis ──
     logger.info("Initializing Redis cache...")
@@ -268,6 +275,7 @@ async def run_bot() -> None:
         settings.BOT_TOKEN,
         whitelist=whitelist,
         redis=redis_client,
+        user_repo=user_repo,
         antispam_duplicate_window=settings.ANTISPAM_DUPLICATE_WINDOW,
         antispam_duplicate_threshold=settings.ANTISPAM_DUPLICATE_THRESHOLD,
         antispam_block_seconds=settings.ANTISPAM_BLOCK_SECONDS,
@@ -277,6 +285,7 @@ async def run_bot() -> None:
     dp["price_service"] = price_service
     dp["llm"] = llm
     dp["redis"] = redis_client
+    dp["user_repo"] = user_repo
     dp["crypto_service"] = crypto_service
     dp["giftwiki_service"] = giftwiki_service
     dp["gift_attrs_service"] = gift_attrs_service
