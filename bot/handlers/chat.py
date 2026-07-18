@@ -25,8 +25,11 @@ from bot.handlers._chat_core import (
     apply_ghost_format,
     build_reply_text,
     extract_reply_context,
+    fetching_prices_text,
     generate_reply,
     is_free_text,
+    llm_error_text,
+    thinking_text,
     typing_action_loop,
 )
 from core.exceptions import LLMError
@@ -59,15 +62,21 @@ async def handle_chat(
     user_text = message.text or ""
     user_id = message.from_user.id if message.from_user else 0
     chat_id = message.chat.id
+    lang_code = message.from_user.language_code if message.from_user else None
+
+    # Localised status messages.
+    _thinking = thinking_text(lang_code)
+    _fetching = fetching_prices_text(lang_code)
+    _error = llm_error_text(lang_code)
 
     # Include reply context if the user replied to another message.
     reply_ctx = extract_reply_context(message)
     if reply_ctx:
         user_text = build_reply_text(user_text, reply_ctx)
 
-    # Send initial "думаю..." placeholder as a reply to the user message
+    # Send initial "thinking..." placeholder as a reply to the user message
     status_msg = await message.answer(
-        THINKING_TEXT,
+        _thinking,
         reply_to_message_id=message.message_id,
         link_preview_options={"is_disabled": True},
     )
@@ -77,7 +86,7 @@ async def handle_chat(
         typing_action_loop(bot, chat_id)
     )
 
-    # Flag to track if we already showed "получаю данные" status
+    # Flag to track if we already showed "fetching data" status
     tool_called = False
 
     async def _on_tool_call() -> None:
@@ -86,7 +95,7 @@ async def handle_chat(
         if not tool_called:
             tool_called = True
             try:
-                await status_msg.edit_text(FETCHING_PRICES_TEXT)
+                await status_msg.edit_text(_fetching)
             except Exception:
                 pass
 
@@ -124,7 +133,7 @@ async def handle_chat(
         logger.warning("chat handler: LLM error for user %d", user_id, exc_info=True)
         try:
             await status_msg.edit_text(
-                LLM_ERROR_TEXT,
+                _error,
                 link_preview_options={"is_disabled": True},
             )
         except Exception:
@@ -133,7 +142,7 @@ async def handle_chat(
         logger.exception("chat handler error")
         try:
             await status_msg.edit_text(
-                LLM_ERROR_TEXT,
+                _error,
                 link_preview_options={"is_disabled": True},
             )
         except Exception:

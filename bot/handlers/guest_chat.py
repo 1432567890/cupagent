@@ -36,7 +36,10 @@ from bot.handlers._chat_core import (
     apply_ghost_format_inline,
     build_reply_text,
     extract_reply_context,
+    fetching_prices_text,
     is_free_text,
+    llm_error_text,
+    thinking_text,
 )
 from bot.handlers._guest_thread import (
     append_to_thread,
@@ -97,6 +100,12 @@ async def handle_guest_chat(
     user_id = message.from_user.id if message.from_user else 0
     chat_id = message.chat.id if message.chat else 0
     message_id = message.message_id
+    lang_code = message.from_user.language_code if message.from_user else None
+
+    # Localised status messages.
+    _thinking = thinking_text(lang_code)
+    _fetching = fetching_prices_text(lang_code)
+    _error = llm_error_text(lang_code)
 
     # Include reply context if the user replied to another message.
     reply_ctx = extract_reply_context(message)
@@ -110,7 +119,7 @@ async def handle_guest_chat(
     try:
         sent = await bot.answer_guest_query(
             guest_query_id=guest_query_id,
-            result=_build_guest_result(THINKING_TEXT),
+            result=_build_guest_result(_thinking),
         )
         inline_message_id = sent.inline_message_id
     except Exception:
@@ -133,14 +142,14 @@ async def handle_guest_chat(
     tool_called = False
 
     async def _on_tool_call() -> None:
-        """Edit placeholder to "получаю данные..." on first tool call."""
+        """Edit placeholder to "fetching data..." on first tool call."""
         nonlocal tool_used, tool_called
         tool_used = True
         if not tool_called:
             tool_called = True
             try:
                 await bot.edit_message_text(
-                    text=FETCHING_PRICES_TEXT,
+                    text=_fetching,
                     inline_message_id=inline_message_id,
                     link_preview_options={"is_disabled": True},
                 )
@@ -202,7 +211,7 @@ async def handle_guest_chat(
         )
         try:
             await bot.edit_message_text(
-                text=LLM_ERROR_TEXT,
+                text=_error,
                 inline_message_id=inline_message_id,
                 link_preview_options={"is_disabled": True},
             )
@@ -212,7 +221,7 @@ async def handle_guest_chat(
         logger.exception("guest chat handler error")
         try:
             await bot.edit_message_text(
-                text=LLM_ERROR_TEXT,
+                text=_error,
                 inline_message_id=inline_message_id,
                 link_preview_options={"is_disabled": True},
             )

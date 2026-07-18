@@ -68,15 +68,48 @@ _TAG_SKIP_RE = re.compile(
 
 # ── Shared UX constants for typing preview ──────────────────────────────
 
-# Typing preview messages (lowercase as per UX convention).
-THINKING_TEXT = "<i>думаю...</i>"
-FETCHING_PRICES_TEXT = "<i>получаю данные...</i>"
+# Typing preview messages are localised based on the user's language_code.
+# Russian is the default for ru* codes, English for everything else.
 
-# User-facing error message shown on any LLM failure.
-LLM_ERROR_TEXT = (
-    "<i>во время обработки запроса произошла непредвиденная ошибка. "
-    "повторите позже через несколько минут</i>"
-)
+
+def _is_ru(lang_code: str | None) -> bool:
+    """True if the language code is Russian (``ru``, ``ru-RU``)."""
+    return bool(lang_code and lang_code.lower().startswith("ru"))
+
+
+def thinking_text(lang_code: str | None = None) -> str:
+    """Localised "thinking…" placeholder."""
+    if _is_ru(lang_code):
+        return "<i>думаю...</i>"
+    return "<i>thinking...</i>"
+
+
+def fetching_prices_text(lang_code: str | None = None) -> str:
+    """Localised "fetching data…" placeholder."""
+    if _is_ru(lang_code):
+        return "<i>получаю данные...</i>"
+    return "<i>fetching data...</i>"
+
+
+def llm_error_text(lang_code: str | None = None) -> str:
+    """Localised error message shown on LLM failure."""
+    if _is_ru(lang_code):
+        return (
+            "<i>во время обработки запроса произошла непредвиденная ошибка. "
+            "повторите позже через несколько минут</i>"
+        )
+    return (
+        "<i>an unexpected error occurred while processing the request. "
+        "please try again in a few minutes</i>"
+    )
+
+
+# Backwards-compatible module-level constants (Russian, used by any
+# legacy import). New code should call the functions above with the
+# user's language_code.
+THINKING_TEXT = thinking_text("ru")
+FETCHING_PRICES_TEXT = fetching_prices_text("ru")
+LLM_ERROR_TEXT = llm_error_text("ru")
 
 
 async def typing_action_loop(bot: Bot, chat_id: int) -> None:
