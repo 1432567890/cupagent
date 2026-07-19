@@ -21,7 +21,6 @@ import json
 import logging
 import re
 from collections.abc import Awaitable, Callable
-from typing import Any
 
 from aiogram import Bot
 
@@ -35,20 +34,6 @@ logger = logging.getLogger(__name__)
 _HISTORY_KEY = "cupagent:chat_history:{user_id}"
 _HISTORY_TTL = 3600  # 1 hour
 _MAX_TURNS = 10  # 5 user + 5 assistant messages
-
-# Gift slug pattern: "spicedwine-42846", "scaredcat-3387".
-# Matches a bare gift slug (NOT inside a t.me URL — those are handled by
-# the gift-links logic) followed by a number. The slug is lowercase ASCII
-# letters only (the canonical t.me/nft URL form). Requires word-boundary
-# or non-URL context on the left so "t.me/foo-123" is not double-processed.
-# We explicitly exclude when preceded by "t.me/nft/" (already a full URL)
-# or "/" (path separator inside a URL).
-_GIFT_SLUG_RE = re.compile(
-    r"(?<![A-Za-z0-9/.-])"            # left boundary: not part of a larger token/URL
-    r"([a-z]{3,20})"                  # slug: 3-20 lowercase letters
-    r"-(\d{1,7})"                     # dash + number (1-7 digits)
-    r"(?![\w-])"                      # not followed by word char or dash
-)
 
 _GHOST_FOOTER = (
     "\n\n<a href='https://t.me/grapesmarket_bot/market?startapp=uwu'>"
@@ -662,84 +647,6 @@ async def _save_history(
     )
 
 
-async def detect_and_resolve_gift_slug(
-    user_text: str,
-    giftwiki_service: Any | None,
-) -> str:
-    """Resolve bare gift slugs (``spicedwine-42846``) into canonical names.
-
-    Scans ``user_text`` for slug patterns and, for each, queries GiftWiki
-    (via :meth:`resolve_canonical_name` against a locally-built slug
-    index) to find the canonical gift name. If found, rewrites the slug
-    in-place as ``Gift Name #NUMBER`` so the LLM receives a normalized,
-    unambiguous reference and the downstream ``wrap_gift_links``
-    post-processor turns it into a clickable link.
-
-    Example:
-        "к какой коллекции spicedwine-42846"
-        → "к какой коллекции Spiced Wine #42846"
-
-    If GiftWiki is unavailable or the slug is unknown, the text is
-    returned unchanged — the LLM still gets the original slug and can
-    try its own tool calls.
-
-    Args:
-        user_text: The raw incoming user message.
-        giftwiki_service: Optional GiftWikiService. If None, the function
-            is a no-op pass-through.
-
-    Returns:
-        The (possibly rewritten) user text.
-    """
-    if not user_text or giftwiki_service is None:
-        return user_text
-
-    matches = list(_GIFT_SLUG_RE.finditer(user_text))
-    if not matches:
-        return user_text
-
-    # Deduplicate slugs so we hit GiftWiki once per unique slug.
-    seen: dict[str, str | None] = {}
-
-    async def _resolve(slug: str) -> str | None:
-        if slug in seen:
-            return seen[slug]
-        try:
-            canonical = await giftwiki_service.resolve_canonical_name(slug)
-        except Exception:  # noqa: BLE001 — GiftWiki is best-effort here
-            logger.warning(
-                "detect_and_resolve_gift_slug: resolve failed for %s",
-                slug, exc_info=True,
-            )
-            canonical = None
-        seen[slug] = canonical
-        return canonical
-
-    # Resolve all unique slugs concurrently.
-    unique_slugs = {m.group(1) for m in matches}
-    await asyncio.gather(*(_resolve(s) for s in unique_slugs))
-
-    # Rewrite the text right-to-left so match offsets stay valid.
-    out = user_text
-    for m in reversed(matches):
-        slug = m.group(1)
-        number = m.group(2)
-        canonical = seen.get(slug)
-        if not canonical:
-            continue
-        # "Name #NUMBER" — wrap_gift_links() will turn this into a link.
-        replacement = f"{canonical} #{number}"
-        out = out[: m.start()] + replacement + out[m.end() :]
-
-    if out != user_text:
-        logger.info(
-            "detect_and_resolve_gift_slug: rewrote slugs in user text "
-            "(%d matches, %d resolved)",
-            len(matches), sum(1 for v in seen.values() if v),
-        )
-    return out
-
-
 async def generate_reply(
     llm: LLMService,
     redis: Redis | None,
@@ -761,7 +668,7 @@ async def generate_reply(
         user_text: The incoming user message.
         price_service: Optional PriceService for floor-price tool.
         crypto_service: Optional CryptoService for currency conversion tool.
-        giftwiki_service: Optional GiftWikiService for collection tools.
+        giftwiki_service: Optional GiftWikiService for monochrome tool.
         gift_attrs_service: Optional GiftAttrsService for resolving a
             specific gift number to its model/backdrop (monochrome lookup).
         on_tool_call: Optional async callback invoked when a tool is called.
@@ -773,16 +680,8 @@ async def generate_reply(
     if redis is not None:
         history = await _load_history(redis, user_id)
 
-    # Resolve bare gift slugs (e.g. "spicedwine-42846") into canonical
-    # collection names so the LLM sees "Spiced Wine #42846" instead of a
-    # cryptic slug. Best-effort — on any failure the original text is
-    # passed through unchanged.
-    resolved_text = await detect_and_resolve_gift_slug(
-        user_text, giftwiki_service,
-    )
-
     reply = await llm.chat(
-        resolved_text,
+        user_text,
         user_id=user_id,
         history=history,
         price_service=price_service,

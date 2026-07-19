@@ -6,10 +6,10 @@ in Redis cache for short-term context.
 
 Supports tool calling — the model can invoke any of the registered tools:
 
-    - ``get_floor_prices``    — gift floor prices from marketplaces
-    - ``convert_currency``    — crypto/fiat conversion (Binance + CBR)
-    - ``search_collections``  — GiftWiki collection search
-    - ``get_collection_detail`` — GiftWiki collection details
+    - ``get_floor_prices``       — gift floor prices from marketplaces
+    - ``get_collection_floors``  — per-model/backdrop floor prices
+    - ``convert_currency``       — crypto/fiat conversion (Binance + CBR)
+    - ``get_monochrome``         — GiftWiki monochrome classification
 
 Tools are dynamically registered based on which services are available.
 A callback hook allows the caller to provide UX feedback (e.g. status
@@ -22,6 +22,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from difflib import SequenceMatcher
 from typing import Any, TYPE_CHECKING
 
 import aiohttp
@@ -130,54 +131,6 @@ _CONVERT_TOOL: dict[str, Any] = {
     },
 }
 
-_GIFTWIKI_SEARCH_TOOL: dict[str, Any] = {
-    "type": "function",
-    "function": {
-        "name": "search_collections",
-        "description": (
-            "Найти коллекции подарков на GiftWiki по имени/ключевому слову. "
-            "Возвращает id, name, count, startapp. Используй для вопросов "
-            "про коллекции/редкости/wiki/классификацию."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Поисковый запрос (английский или русский).",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Сколько вернуть (по умолчанию 10, макс 50).",
-                },
-            },
-            "required": ["query"],
-        },
-    },
-}
-
-_GIFTWIKI_DETAIL_TOOL: dict[str, Any] = {
-    "type": "function",
-    "function": {
-        "name": "get_collection_detail",
-        "description": (
-            "Получить детали коллекции GiftWiki по её id: подарки, модели, "
-            "редкости, supply_tier, related-коллекции. Сначала найди id через "
-            "search_collections."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string",
-                    "description": "24-символьный hex id коллекции из search_collections.",
-                },
-            },
-            "required": ["id"],
-        },
-    },
-}
-
 _MONOCHROME_TOOL: dict[str, Any] = {
     "type": "function",
     "function": {
@@ -265,8 +218,6 @@ def _build_tools(services: dict[str, Any]) -> list[dict[str, Any]]:
     if services.get("crypto_service") is not None:
         tools.append(_CONVERT_TOOL)
     if services.get("giftwiki_service") is not None:
-        tools.append(_GIFTWIKI_SEARCH_TOOL)
-        tools.append(_GIFTWIKI_DETAIL_TOOL)
         tools.append(_MONOCHROME_TOOL)
     return tools
 
@@ -276,8 +227,6 @@ _KNOWN_TOOL_NAMES: frozenset[str] = frozenset({
     "get_floor_prices",
     "get_collection_floors",
     "convert_currency",
-    "search_collections",
-    "get_collection_detail",
     "get_monochrome",
 })
 
@@ -624,14 +573,6 @@ class LLMService:
                 return await self._tool_convert_currency(
                     services["crypto_service"], fn_args,
                 )
-            if fn_name == "search_collections":
-                return await self._tool_search_collections(
-                    services["giftwiki_service"], fn_args,
-                )
-            if fn_name == "get_collection_detail":
-                return await self._tool_collection_detail(
-                    services["giftwiki_service"], fn_args,
-                )
             if fn_name == "get_monochrome":
                 return await self._tool_get_monochrome(
                     services["giftwiki_service"], fn_args,
@@ -868,31 +809,6 @@ class LLMService:
         )
         return json.dumps(result, ensure_ascii=False)
 
-    async def _tool_search_collections(
-        self, giftwiki_service: GiftWikiService, args: dict[str, Any],
-    ) -> str:
-        """Execute search_collections and return compact JSON."""
-        query = args.get("query", "")
-        limit = args.get("limit", 10)
-        results = await giftwiki_service.search_collections(query, limit=limit)
-        return json.dumps(
-            {"query": query, "count": len(results), "collections": results},
-            ensure_ascii=False,
-        )
-
-    async def _tool_collection_detail(
-        self, giftwiki_service: GiftWikiService, args: dict[str, Any],
-    ) -> str:
-        """Execute get_collection_detail and return compact JSON."""
-        collection_id = args.get("id", "")
-        detail = await giftwiki_service.get_collection_detail(collection_id)
-        if detail is None:
-            return json.dumps(
-                {"error": f"collection {collection_id} not found"},
-                ensure_ascii=False,
-            )
-        return json.dumps(detail, ensure_ascii=False)
-
     async def _tool_get_monochrome(
         self,
         giftwiki_service: GiftWikiService,
@@ -900,11 +816,6 @@ class LLMService:
         gift_attrs_service: GiftAttrsService | None = None,
     ) -> str:
         """Execute get_monochrome and return compact JSON.
-
-        The GiftWiki API needs the canonical display name (e.g. ``Scared
-        Cat`` with a space). If the LLM passed a slug / wrong case and the
-        first call returns nothing, we try to recover the canonical name
-        via ``search_collections`` and retry once.
 
         If ``number`` is given and a ``GiftAttrsService`` is available,
         we resolve the specific instance's model + backdrop from its
@@ -917,24 +828,6 @@ class LLMService:
         number = self._coerce_int(number_raw)
 
         results = await giftwiki_service.get_monochromes(gift_name=gift_name)
-
-        # Fallback: empty result likely means wrong name format (slug /
-        # lowercase / underscore). Try to find the canonical name via
-        # search_collections and retry once.
-        if not results:
-            resolved = await self._resolve_canonical_name(
-                giftwiki_service, gift_name
-            )
-            if resolved and resolved != gift_name:
-                logger.info(
-                    "LLMService: monochrome retry '%s' → '%s'",
-                    gift_name, resolved,
-                )
-                results = await giftwiki_service.get_monochromes(
-                    gift_name=resolved,
-                )
-                if results:
-                    gift_name = resolved
 
         # Resolve the specific instance by number → model + backdrop →
         # narrow the collection matrix to the one real type.
@@ -1052,40 +945,6 @@ class LLMService:
             )
         return payload
 
-    async def _resolve_canonical_name(
-        self, giftwiki_service: GiftWikiService, raw: str,
-    ) -> str | None:
-        """Try to find the canonical display name for a slug / slang input.
-
-        Converts ``scaredcat`` / ``scared_cat`` / ``ScaredCat`` into the
-        proper ``Scared Cat`` form by searching collections and returning
-        the first exact-ish match's name.
-        """
-        if not raw:
-            return None
-        # Build a search query: split camelCase / underscores / dashes.
-        import re as _re
-
-        query = _re.sub(r"[_-]", " ", raw)
-        query = _re.sub(r"(?<!^)(?=[A-Z])", " ", query).strip().lower()
-        if not query:
-            return None
-        try:
-            found = await giftwiki_service.search_collections(query, limit=5)
-        except Exception:
-            return None
-        if not found:
-            return None
-        # Prefer a case-insensitive match against the input.
-        raw_lower = raw.lower().replace("_", "").replace("-", "").replace(" ", "")
-        for item in found:
-            name = item.get("name") or ""
-            name_norm = name.lower().replace(" ", "")
-            if name_norm == raw_lower:
-                return name
-        # Otherwise return the first result's name as best guess.
-        return found[0].get("name")
-
     async def close(self) -> None:
         """Close the shared HTTP session."""
         if self._session and not self._session.closed:
@@ -1098,7 +957,7 @@ def _service_supports(fn_name: str, services: dict[str, Any]) -> bool:
         return services.get("price_service") is not None
     if fn_name == "convert_currency":
         return services.get("crypto_service") is not None
-    if fn_name in ("search_collections", "get_collection_detail", "get_monochrome"):
+    if fn_name == "get_monochrome":
         return services.get("giftwiki_service") is not None
     return False
 
@@ -1124,24 +983,91 @@ def _translit(s: str) -> str:
     return "".join(_RU_EN_TABLE.get(c, c) for c in s.lower())
 
 
+# Fuzzy-match thresholds. ``_FUZZY_TOKEN_RATIO`` covers single-word typo
+# queries ("lolpop" → "lollipop", ratio ≈ 0.94). ``_FUZZY_FULL_RATIO`` is
+# for when the user types the whole collection name with a small error.
+_FUZZY_TOKEN_RATIO = 0.82
+_FUZZY_FULL_RATIO = 0.85
+
+# Score tiers — substring/translit matches are exact (1.0), fuzzy matches
+# are scored by ratio, non-matches are 0.
+_SCORE_EXACT = 1.0
+
+
+def _fuzzy_score(query_norm: str, name: str) -> float:
+    """Return a relevance score (0.0–1.0) for ``query_norm`` vs ``name``.
+
+    Higher score = closer match. Order of checks, cheapest first:
+
+    1. Exact substring on the original name ("snake" → "Lunar Snake").
+    2. Substring after transliterating the query ("пепе" → "pepe" →
+       "Plush Pepe").
+    3. Substring of the transliterated name against the query.
+    4. Token-level fuzzy ratio: best ``SequenceMatcher.ratio()`` between
+       the query and any whitespace-separated token of the name.
+    5. Whole-name fuzzy ratio.
+
+    Returns 0.0 if no check passes the minimum threshold.
+    """
+    if not query_norm or not name:
+        return 0.0
+
+    # Substring matches — best possible score.
+    if query_norm in name:
+        return _SCORE_EXACT
+    q_translit = _translit(query_norm)
+    if q_translit and q_translit in name:
+        return _SCORE_EXACT
+    if _translit(name).find(query_norm) >= 0:
+        return _SCORE_EXACT
+
+    # Token-level fuzzy: compare the query against each word of the name.
+    best_token = 0.0
+    for token in name.split():
+        if not token:
+            continue
+        ratio = SequenceMatcher(None, query_norm, token).ratio()
+        if ratio > best_token:
+            best_token = ratio
+
+    # Whole-name fuzzy for full-name queries with a typo.
+    full_ratio = SequenceMatcher(None, query_norm, name).ratio()
+
+    # Return the best score above the respective thresholds, or 0.
+    if best_token >= _FUZZY_TOKEN_RATIO:
+        return best_token
+    if full_ratio >= _FUZZY_FULL_RATIO:
+        return full_ratio
+    return 0.0
+
+
+def _fuzzy_match(query_norm: str, name: str) -> bool:
+    """Return True if ``query_norm`` matches collection ``name``."""
+    return _fuzzy_score(query_norm, name) > 0.0
+
+
 def _filter_and_pick(prices: list, query_norm: str | None, cap: int) -> list:
-    """Filter prices by query (if any) and cap to ``cap`` results.
+    """Filter prices by query and sort by relevance.
 
     When ``query_norm`` is given, only collections whose name matches the
-    query (case-insensitive substring on original OR transliterated) are
-    returned — and ALL matches, ignoring ``cap``.
+    query (substring, transliteration, or fuzzy typo match) are returned
+    — and ALL matches, ignoring ``cap``. Results are sorted by descending
+    relevance score so the LLM sees the best matches first (e.g. "lolpop"
+    → "LolPop" before "Hypno Lollipop").
     """
     if not query_norm:
         return prices[:cap]
 
-    out = []
-    q = query_norm
-    q_translit = _translit(q)
+    scored: list[tuple[float, Any]] = []
     for p in prices:
         name = (p.gift_name or "").lower()
-        if q in name or q_translit in name or _translit(name).find(q) >= 0:
-            out.append(p)
-    return out
+        score = _fuzzy_score(query_norm, name)
+        if score > 0.0:
+            scored.append((score, p))
+
+    # Sort by score descending — best matches first.
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [p for _, p in scored]
 
 
 def _filter_monochrome(

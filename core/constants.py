@@ -35,7 +35,6 @@ NANOTON = 1_000_000_000
 # Cache TTLs (seconds)
 CRYPTO_PRICES_TTL = 60        # 1 min — crypto is volatile
 FIAT_RATES_TTL = 21600        # 6h   — fiat updates once a day
-GIFTWIKI_SEARCH_TTL = 600     # 10 min
 GIFTWIKI_DETAIL_TTL = 3600    # 1h
 GIFTATTRS_TTL = 86400        # 24h — gift attributes are immutable
 
