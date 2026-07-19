@@ -14,17 +14,17 @@ router = Router()
 # ── Message templates ─────────────────────────────────────────────────
 
 _START_RU = (
-    "пример использования: @cupagentbot что ты умеешь?"
+    "Пример использования: @cupagentbot что ты умеешь?"
 )
 
 _START_EN = (
-    "try: @cupagentbot what can you do?"
+    "Try: @cupagentbot what can you do?"
 )
 
 # ── Button labels (localised) ──────────────────────────────────────────
 
-_BUTTON_RU = "попробовать"
-_BUTTON_EN = "try it"
+_BUTTON_RU = "Попробовать"
+_BUTTON_EN = "Try it"
 
 # ── Inline query that gets pre-filled in the target chat ────────────────
 
