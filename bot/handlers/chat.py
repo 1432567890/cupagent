@@ -51,12 +51,13 @@ async def handle_chat(
     crypto_service=None,
     giftwiki_service=None,
     gift_attrs_service=None,
+    moomin_service=None,
 ) -> None:
     """Forward free-text messages to the LLM with typing preview.
 
     ``bot``, ``llm``, ``redis``, ``price_service``, ``crypto_service``,
-    ``giftwiki_service`` and ``gift_attrs_service`` are
-    injected from the dispatcher's workflow_data (set in main.py via
+    ``giftwiki_service``, ``gift_attrs_service`` and ``moomin_service``
+    are injected from the dispatcher's workflow_data (set in main.py via
     ``dp["key"] = value``).
     """
     user_text = message.text or ""
@@ -109,6 +110,7 @@ async def handle_chat(
             crypto_service=crypto_service,
             giftwiki_service=giftwiki_service,
             gift_attrs_service=gift_attrs_service,
+            moomin_service=moomin_service,
             on_tool_call=_on_tool_call,
         )
 

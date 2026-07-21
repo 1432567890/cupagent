@@ -203,6 +203,22 @@ def _init_gift_attrs_service(redis_client) -> Any:
     return GiftAttrsService(redis=redis_client)
 
 
+def _init_moomin_service(settings, redis_client) -> Any:
+    """Initialize Moomin Market API client. Returns None if no key is set."""
+    if not settings.MOOMIN_API_KEY:
+        logger.info(
+            "MOOMIN_API_KEY not set — Moomin snapshot/history tools disabled."
+        )
+        return None
+
+    from services.moomin_service import MoominService
+
+    return MoominService(
+        api_key=settings.MOOMIN_API_KEY,
+        redis=redis_client,
+    )
+
+
 async def run_bot() -> None:
     """Initialize all services and start the bot."""
     from config.settings import get_settings
@@ -242,6 +258,10 @@ async def run_bot() -> None:
     # ── Gift attributes scraper (resolves a gift number → model/backdrop) ──
     logger.info("Initializing gift attributes service...")
     gift_attrs_service = _init_gift_attrs_service(redis_client)
+
+    # ── Moomin Market API (cross-market snapshots + OHLC history) ──
+    logger.info("Initializing Moomin Market service...")
+    moomin_service = _init_moomin_service(settings, redis_client)
 
     # ── Price service ──
     price_service: PriceService | None = None
@@ -289,6 +309,7 @@ async def run_bot() -> None:
     dp["crypto_service"] = crypto_service
     dp["giftwiki_service"] = giftwiki_service
     dp["gift_attrs_service"] = gift_attrs_service
+    dp["moomin_service"] = moomin_service
 
     # ── Graceful shutdown ──
     async def _shutdown(signum: int) -> None:
@@ -303,6 +324,8 @@ async def run_bot() -> None:
             await giftwiki_service.close()
         if gift_attrs_service:
             await gift_attrs_service.close()
+        if moomin_service:
+            await moomin_service.close()
         if init_data_provider is not None:
             await init_data_provider.close()
         await db_pool.close()
@@ -319,13 +342,14 @@ async def run_bot() -> None:
 
     logger.info(
         "Starting bot polling (whitelist=%s, llm=%s, prices=%s, "
-        "crypto=%s, giftwiki=%s, gift_attrs=%s)...",
+        "crypto=%s, giftwiki=%s, gift_attrs=%s, moomin=%s)...",
         "open" if whitelist is None else f"{len(whitelist)} users",
         "on" if llm else "off",
         "on" if price_service else "off",
         "on" if crypto_service else "off",
         "on" if giftwiki_service else "off",
         "on" if gift_attrs_service else "off",
+        "on" if moomin_service else "off",
     )
     try:
         await dp.start_polling(
@@ -342,6 +366,8 @@ async def run_bot() -> None:
             await giftwiki_service.close()
         if gift_attrs_service:
             await gift_attrs_service.close()
+        if moomin_service:
+            await moomin_service.close()
         if init_data_provider is not None:
             await init_data_provider.close()
         await db_pool.close()

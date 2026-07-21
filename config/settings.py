@@ -93,6 +93,11 @@ class Settings(BaseSettings):
     # ── GiftWiki API (https://api.giftwiki.tg/docs, X-API-Key header) ──
     GIFTWIKI_TOKEN: str = ""
 
+    # ── Moomin Market API (https://api.moomin.cfd/market/v1, X-API-Key) ──
+    # Cross-market gift collection aggregator (snapshot, OHLC candles).
+    # Optional — if empty, Moomin snapshot/history tools are disabled.
+    MOOMIN_API_KEY: str = ""
+
     # ── Crypto / Fiat APIs (no auth required, override only if proxied) ──
     BINANCE_BASE_URL: str = "https://api.binance.com/api/v3"
     EXCHANGERATE_BASE_URL: str = "https://open.er-api.com/v6"

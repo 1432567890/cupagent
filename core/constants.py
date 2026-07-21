@@ -16,6 +16,11 @@ CBR_DAILY_URL = "https://www.cbr-xml-daily.ru/daily_json.js"
 # GiftWiki API (X-API-Key header)
 GIFTWIKI_BASE_URL = "https://api.giftwiki.tg"
 
+# Moomin Market API (X-API-Key header) — cross-market gift collection aggregator.
+# Quote asset is TON (= GRAM 1:1). Slugs are lowercase alphanumeric
+# versions of the collection prefix: "Artisan Brick" -> "artisanbrick".
+MOOMIN_BASE_URL = "https://api.moomin.cfd/market/v1"
+
 # Telegram collectible gift pages (t.me/nft/<slug>-<number>)
 TELEGRAM_NFT_BASE_URL = "https://t.me/nft"
 
@@ -25,6 +30,7 @@ REDIS_CRYPTO_KEY = "cupagent:crypto:prices"
 REDIS_FIAT_KEY_PREFIX = "cupagent:fiat"
 REDIS_GIFTWIKI_KEY_PREFIX = "cupagent:giftwiki"
 REDIS_GIFTATTRS_KEY_PREFIX = "cupagent:giftattrs"
+REDIS_MOOMIN_KEY_PREFIX = "cupagent:moomin"
 
 # Default parse mode for Telegram messages
 DEFAULT_PARSE_MODE = "HTML"
@@ -37,6 +43,15 @@ CRYPTO_PRICES_TTL = 60        # 1 min — crypto is volatile
 FIAT_RATES_TTL = 21600        # 6h   — fiat updates once a day
 GIFTWIKI_DETAIL_TTL = 3600    # 1h
 GIFTATTRS_TTL = 86400        # 24h — gift attributes are immutable
+
+# Moomin Market API cache TTLs.
+# Collections list changes rarely (new drops only) — cache aggressively.
+# Snapshot prices are volatile — short TTL. Candle bars are historical
+# and append-only, so a few minutes is fine.
+MOOMIN_COLLECTIONS_TTL = 3600   # 1h
+MOOMIN_SNAPSHOT_TTL = 60        # 1m  — prices are volatile
+MOOMIN_CANDLES_TTL = 300        # 5m  — historical bars
+MOOMIN_HTTP_TIMEOUT = 20        # seconds
 
 # Rating-based rate-limit tiers (Telegram Star spending level → cooldown).
 # Each entry maps a rating level range to the minimum seconds between

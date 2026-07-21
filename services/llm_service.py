@@ -22,6 +22,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from typing import Any, TYPE_CHECKING
 
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
     from services.crypto_service import CryptoService
     from services.gift_attrs_service import GiftAttrsService
     from services.giftwiki_service import GiftWikiService
+    from services.moomin_service import MoominService
     from services.price_service import PriceService
 
 logger = logging.getLogger(__name__)
@@ -207,6 +209,93 @@ _COLLECTION_ATTRIBUTES_TOOL: dict[str, Any] = {
     },
 }
 
+_MARKET_SNAPSHOT_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "get_market_snapshot",
+        "description": (
+            "Актуальные кросс-маркет цены коллекции с агрегатора Moomin "
+            "Market: цена на каждом маркете (grapes/mrkt/portals/getgems/"
+            "tonnel/xgift) и прямой floor (минимальная из них). Используй "
+            "когда юзер спрашивает «сколько сейчас стоит коллекция по "
+            "всем маркетам» или хочет сравнить актуальные цены площадок. "
+            "Цены в TON (= GRAM 1:1). Для одного маркета можно и "
+            "get_floor_prices."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "collection": {
+                    "type": "string",
+                    "description": (
+                        "Имя коллекции или слаг. Имя: 'Artisan Brick', "
+                        "'Plush Pepe', 'Scared Cat'. Слаг тоже ок: "
+                        "'artisanbrick'. Переводи сленг сам: кот→"
+                        "Scared Cat, пепе→Plush Pepe, змея→Lunar Snake."
+                    ),
+                },
+            },
+            "required": ["collection"],
+        },
+    },
+}
+
+_PRICE_HISTORY_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "get_price_history",
+        "description": (
+            "История цены коллекции (OHLC-свечи) с агрегатора Moomin "
+            "Market для одного маркета. Используй когда юзер спрашивает "
+            "про тренд/динамику: «как менялась цена», «росла ли», "
+            "«упала ли», «история цен», «что было неделю назад», "
+            "«динамика за месяц». Вернёт сводку (open/high/low/close, "
+            "% изменения, направление тренда) + ряд точек закрытия, "
+            "НЕ сырой дамп свечей. Цены в TON (= GRAM 1:1)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "collection": {
+                    "type": "string",
+                    "description": (
+                        "Имя коллекции или слаг: 'Artisan Brick', "
+                        "'plushpepe', 'Scared Cat'."
+                    ),
+                },
+                "market": {
+                    "type": "string",
+                    "enum": ["grapes", "mrkt", "portals", "getgems",
+                             "tonnel", "xgift"],
+                    "description": (
+                        "Маркет для истории. По умолчанию mrkt "
+                        "(обычно самый ликвидный). Если юзер указал "
+                        "маркет — передавай его."
+                    ),
+                },
+                "interval": {
+                    "type": "string",
+                    "enum": ["5m", "1h", "1d"],
+                    "description": (
+                        "Свечи: 5m (до 31 дня), 1h (до 366 дней), "
+                        "1d (до 1095 дней). По умолчанию 1d — для "
+                        "динамики за неделю/месяц. 1h — для внутридневной, "
+                        "5m — для короткой (минуты-часы)."
+                    ),
+                },
+                "days": {
+                    "type": "integer",
+                    "description": (
+                        "Сколько дней истории (от 1 до лимита интервала). "
+                        "По умолчанию 7."
+                    ),
+                },
+            },
+            "required": ["collection"],
+        },
+    },
+}
+
 
 def _build_tools(services: dict[str, Any]) -> list[dict[str, Any]]:
     """Build the tool list based on which services are available.
@@ -222,6 +311,9 @@ def _build_tools(services: dict[str, Any]) -> list[dict[str, Any]]:
         tools.append(_CONVERT_TOOL)
     if services.get("giftwiki_service") is not None:
         tools.append(_MONOCHROME_TOOL)
+    if services.get("moomin_service") is not None:
+        tools.append(_MARKET_SNAPSHOT_TOOL)
+        tools.append(_PRICE_HISTORY_TOOL)
     return tools
 
 
@@ -231,6 +323,8 @@ _KNOWN_TOOL_NAMES: frozenset[str] = frozenset({
     "get_collection_floors",
     "convert_currency",
     "get_monochrome",
+    "get_market_snapshot",
+    "get_price_history",
 })
 
 
@@ -318,6 +412,14 @@ class LLMService:
             "ориг", "оригинал", "релеер", "relayer", "настоящий аккаунт",
             "оригинальный аккаунт", "это ориг", "original",
         ),
+        "market-history": (
+            "тренд", "динамика", "история цен", "как менялась",
+            "росла", "упала", "выросла", "снизилась", "изменилась",
+            "за неделю", "за месяц", "за день", "за последние",
+            "что было", "раньше стоил", "раньше стоила",
+            "график", "chart", "trend", "history", "grew", "fell",
+            "risen", "dropped", "performance",
+        ),
     }
 
     def _build_system_prompt(self, user_text: str) -> str:
@@ -372,6 +474,7 @@ class LLMService:
         crypto_service: CryptoService | None = None,
         giftwiki_service: GiftWikiService | None = None,
         gift_attrs_service: GiftAttrsService | None = None,
+        moomin_service: MoominService | None = None,
         on_tool_call: Callable[[], Awaitable[None]] | None = None,
     ) -> str:
         """Send a message to the LLM and return the response text.
@@ -388,6 +491,8 @@ class LLMService:
             giftwiki_service: Optional GiftWikiService for collection lookup.
             gift_attrs_service: Optional GiftAttrsService for resolving a
                 specific gift number to its model/backdrop.
+            moomin_service: Optional MoominService for cross-market
+                snapshots and OHLC price history.
             on_tool_call: Optional async callback invoked before executing
                 a tool (e.g. to update UI status).
 
@@ -404,6 +509,7 @@ class LLMService:
             "crypto_service": crypto_service,
             "giftwiki_service": giftwiki_service,
             "gift_attrs_service": gift_attrs_service,
+            "moomin_service": moomin_service,
         }
         tools = _build_tools(services)
 
@@ -580,6 +686,14 @@ class LLMService:
                 return await self._tool_get_monochrome(
                     services["giftwiki_service"], fn_args,
                     services.get("gift_attrs_service"),
+                )
+            if fn_name == "get_market_snapshot":
+                return await self._tool_market_snapshot(
+                    services["moomin_service"], fn_args,
+                )
+            if fn_name == "get_price_history":
+                return await self._tool_price_history(
+                    services["moomin_service"], fn_args,
                 )
             return json.dumps(
                 {"error": f"unknown tool: {fn_name}"}, ensure_ascii=False,
@@ -801,6 +915,119 @@ class LLMService:
             ensure_ascii=False,
         )
 
+    async def _tool_market_snapshot(
+        self, moomin_service: MoominService, args: dict[str, Any],
+    ) -> str:
+        """Execute get_market_snapshot and return compact JSON.
+
+        Returns per-market current prices + direct floor. Markets with a
+        null/missing price are dropped so the LLM never prints "None".
+        A 404 (unknown collection) is surfaced as an explicit error dict
+        so the model can say the collection wasn't found.
+        """
+        collection = args.get("collection", "")
+        try:
+            snap = await moomin_service.get_snapshot(collection)
+        except Exception as e:  # noqa: BLE001 — surface to LLM
+            logger.warning("LLMService: get_market_snapshot failed: %s", e)
+            return json.dumps(
+                {"collection": collection, "error": f"{type(e).__name__}: {e}"},
+                ensure_ascii=False,
+            )
+        if snap is None:
+            return json.dumps(
+                {
+                    "collection": collection,
+                    "error": "коллекция не найдена. проверь имя или попробуй синоним",
+                },
+                ensure_ascii=False,
+            )
+        priced = [p for p in snap.get("prices", []) if p.get("price")]
+        return json.dumps(
+            {
+                "collection": snap.get("title") or collection,
+                "slug": snap.get("slug"),
+                "quote_asset": snap.get("quote_asset", "TON"),
+                "prices": priced,
+                "direct_floor": snap.get("direct_floor"),
+                "note": (
+                    "цены в TON (= GRAM 1:1). покажи по маркетам и "
+                    "отметь где дешевле (direct_floor)."
+                ),
+            },
+            ensure_ascii=False,
+        )
+
+    async def _tool_price_history(
+        self, moomin_service: MoominService, args: dict[str, Any],
+    ) -> str:
+        """Execute get_price_history and return a trend summary JSON.
+
+        The Moomin candles endpoint can return hundreds of bars — that
+        would blow the LLM token budget. Instead of dumping them raw,
+        this computes a compact summary (open/high/low/close, % change,
+        direction) plus a downsampled series of ~12 close points so the
+        model can describe the shape of the trend.
+        """
+        collection = args.get("collection", "")
+        market = args.get("market") or "mrkt"
+        interval = args.get("interval") or "1d"
+        days = self._coerce_int(args.get("days")) or _DEFAULT_HISTORY_DAYS
+
+        # Clamp days to the interval's max lookback.
+        max_days = _INTERVAL_MAX_DAYS.get(interval, _DEFAULT_MAX_DAYS)
+        days = max(1, min(days, max_days))
+
+        now = datetime.now(timezone.utc)
+        from_dt = (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        to_dt = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        try:
+            data = await moomin_service.get_candles(
+                collection,
+                market=market,
+                interval=interval,
+                from_dt=from_dt,
+                to_dt=to_dt,
+            )
+        except Exception as e:  # noqa: BLE001 — surface to LLM
+            logger.warning("LLMService: get_price_history failed: %s", e)
+            return json.dumps(
+                {"collection": collection, "error": f"{type(e).__name__}: {e}"},
+                ensure_ascii=False,
+            )
+        if data is None:
+            return json.dumps(
+                {
+                    "collection": collection,
+                    "error": "коллекция не найдена. проверь имя или попробуй синоним",
+                },
+                ensure_ascii=False,
+            )
+        bars = data.get("candles", [])
+        summary = _summarize_candles(bars)
+        series = _downsample_close_series(bars, _HISTORY_SERIES_POINTS)
+        return json.dumps(
+            {
+                "collection": data.get("title") or collection,
+                "slug": data.get("slug"),
+                "market": data.get("market", market),
+                "interval": data.get("interval", interval),
+                "period_days": days,
+                "bars": len(bars),
+                "quote_asset": data.get("quote_asset", "TON"),
+                "summary": summary,
+                "series": series,
+                "note": (
+                    "цены в TON (= GRAM 1:1). series — прореженный ряд "
+                    "точек закрытия [{t, close}]. опиши тренд по summary "
+                    "(direction + change_pct) и при необходимости форму "
+                    "по series."
+                ),
+            },
+            ensure_ascii=False,
+        )
+
     async def _tool_convert_currency(
         self, crypto_service: CryptoService, args: dict[str, Any],
     ) -> str:
@@ -962,6 +1189,8 @@ def _service_supports(fn_name: str, services: dict[str, Any]) -> bool:
         return services.get("crypto_service") is not None
     if fn_name == "get_monochrome":
         return services.get("giftwiki_service") is not None
+    if fn_name in ("get_market_snapshot", "get_price_history"):
+        return services.get("moomin_service") is not None
     return False
 
 
@@ -1099,3 +1328,110 @@ def _filter_monochrome(
         r for r in rows
         if _eq(r.get("model_name"), m) and _eq(r.get("backdrop_name"), b)
     ]
+
+
+# ── Price-history aggregation helpers ─────────────────────────────────
+# The Moomin candles endpoint can return hundreds of bars (e.g. 1h over a
+# year = ~8760). Rather than dumping them raw (token explosion), we
+# summarize into a compact trend overview and downsample the close-price
+# series to a fixed number of points the model can describe.
+
+_DEFAULT_HISTORY_DAYS = 7
+_DEFAULT_MAX_DAYS = 1095
+_HISTORY_SERIES_POINTS = 12
+# Direction threshold: |change_pct| below this is "flat".
+_FLAT_THRESHOLD_PCT = 2.0
+
+# Per-interval max lookback (mirrors services/moomin_service.py).
+_INTERVAL_MAX_DAYS: dict[str, int] = {"5m": 31, "1h": 366, "1d": 1095}
+
+
+def _to_float(value: Any) -> float | None:
+    """Parse a candle OHLC value (string or number) into a float."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _summarize_candles(
+    bars: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Compute a compact trend summary over OHLC bars.
+
+    Returns ``open/high/low/close`` (first open, last close, period
+    extrema), ``change_pct`` (close vs open), and ``direction``
+    (up/down/flat with a ±2% threshold). Empty input → ``None`` fields.
+    """
+    if not bars:
+        return {
+            "open": None, "high": None, "low": None, "close": None,
+            "change_pct": None, "direction": None,
+        }
+    opens = [_to_float(b.get("open")) for b in bars]
+    highs = [_to_float(b.get("high")) for b in bars]
+    lows = [_to_float(b.get("low")) for b in bars]
+    closes = [_to_float(b.get("close")) for b in bars]
+
+    open_val = opens[0]
+    close_val = closes[-1] if closes else None
+    high_val = max((h for h in highs if h is not None), default=None)
+    low_val = min((l for l in lows if l is not None), default=None)
+
+    change_pct: float | None = None
+    direction = "flat"
+    if open_val and close_val:
+        change_pct = round((close_val - open_val) / open_val * 100, 2)
+        if change_pct > _FLAT_THRESHOLD_PCT:
+            direction = "up"
+        elif change_pct < -_FLAT_THRESHOLD_PCT:
+            direction = "down"
+
+    def _fmt(v: float | None) -> float | None:
+        return round(v, 4) if v is not None else None
+
+    return {
+        "open": _fmt(open_val),
+        "high": _fmt(high_val),
+        "low": _fmt(low_val),
+        "close": _fmt(close_val),
+        "change_pct": change_pct,
+        "direction": direction,
+    }
+
+
+def _downsample_close_series(
+    bars: list[dict[str, Any]], points: int,
+) -> list[dict[str, Any]]:
+    """Return ``points`` evenly-spaced ``{t, close}`` samples from bars.
+
+    Picks roughly evenly-spaced bars (start, ..., end) so the model sees
+    the shape of the trend without hundreds of rows. Each sample keeps
+    the bar's ``start`` timestamp and ``close`` price. Fewer bars than
+    ``points`` → returned as-is.
+    """
+    if not bars:
+        return []
+    n = len(bars)
+    if n <= points:
+        out = []
+        for b in bars:
+            close = _to_float(b.get("close"))
+            if close is None:
+                continue
+            out.append({"t": b.get("start"), "close": round(close, 4)})
+        return out
+
+    out: list[dict[str, Any]] = []
+    # Evenly spaced indices 0..n-1, ``points`` total, always including
+    # first and last.
+    for i in range(points):
+        idx = round(i * (n - 1) / (points - 1))
+        b = bars[idx]
+        close = _to_float(b.get("close"))
+        if close is None:
+            continue
+        out.append({"t": b.get("start"), "close": round(close, 4)})
+    return out

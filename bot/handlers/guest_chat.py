@@ -82,6 +82,7 @@ async def handle_guest_chat(
     crypto_service=None,
     giftwiki_service=None,
     gift_attrs_service=None,
+    moomin_service=None,
 ) -> None:
     """Answer a guest free-text message with "думаю..." → edit pattern.
 
@@ -90,7 +91,7 @@ async def handle_guest_chat(
     Falls back to a second ``answerGuestQuery`` if editing fails.
 
     Bot/llm/redis/price_service/crypto_service/giftwiki_service/
-    gift_attrs_service are injected from workflow_data by name.
+    gift_attrs_service/moomin_service are injected from workflow_data by name.
     """
     guest_query_id = message.guest_query_id
     if guest_query_id is None:
@@ -165,6 +166,7 @@ async def handle_guest_chat(
             crypto_service=crypto_service,
             giftwiki_service=giftwiki_service,
             gift_attrs_service=gift_attrs_service,
+            moomin_service=moomin_service,
             on_tool_call=_on_tool_call,
         )
 

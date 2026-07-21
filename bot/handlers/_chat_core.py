@@ -657,6 +657,7 @@ async def generate_reply(
     crypto_service=None,
     giftwiki_service=None,
     gift_attrs_service=None,
+    moomin_service=None,
     on_tool_call: Callable[[], Awaitable[None]] | None = None,
 ) -> str:
     """Run the LLM with history and persist the turn.
@@ -671,6 +672,8 @@ async def generate_reply(
         giftwiki_service: Optional GiftWikiService for monochrome tool.
         gift_attrs_service: Optional GiftAttrsService for resolving a
             specific gift number to its model/backdrop (monochrome lookup).
+        moomin_service: Optional MoominService for cross-market snapshots
+            and OHLC price history tools.
         on_tool_call: Optional async callback invoked when a tool is called.
 
     Returns:
@@ -688,6 +691,7 @@ async def generate_reply(
         crypto_service=crypto_service,
         giftwiki_service=giftwiki_service,
         gift_attrs_service=gift_attrs_service,
+        moomin_service=moomin_service,
         on_tool_call=on_tool_call,
     )
 

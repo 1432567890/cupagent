@@ -21,6 +21,10 @@ class GiftAttrsError(cupagentError):
     """Failed to fetch or parse a Telegram collectible gift page."""
 
 
+class MoominError(cupagentError):
+    """Moomin Market API error."""
+
+
 class DatabaseError(cupagentError):
     """Database operation failed."""
 
