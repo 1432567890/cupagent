@@ -12,6 +12,16 @@ XGIFT_BASE_URL = "https://app-api.xgift.tg"
 BINANCE_BASE_URL = "https://api.binance.com/api/v3"
 EXCHANGERATE_BASE_URL = "https://open.er-api.com/v6"
 CBR_DAILY_URL = "https://www.cbr-xml-daily.ru/daily_json.js"
+# Frankfurter (ECB open rates, no auth) — used for fiat history.
+# NOTE: ECB dropped RUB in 2022, so RUB/UAH/KZT/GEL/BYN are NOT here —
+# those fall back to the CBR archive (cbr-xml-daily.ru/archive/...).
+FRANKFURTER_BASE_URL = "https://api.frankfurter.app"
+# CBR historical archive — one JSON file per business day.
+# Template: {CBR_ARCHIVE_URL_TEMPLATE.format(year=..., month=..., day=...)}
+CBR_ARCHIVE_URL_TEMPLATE = (
+    "https://www.cbr-xml-daily.ru/archive/"
+    "{year:04d}/{month:02d}/{day:02d}/daily_json.js"
+)
 
 # GiftWiki API (X-API-Key header)
 GIFTWIKI_BASE_URL = "https://api.giftwiki.tg"
@@ -28,6 +38,12 @@ TELEGRAM_NFT_BASE_URL = "https://t.me/nft"
 REDIS_KEY_PREFIX = "cupagent:floor_price"
 REDIS_CRYPTO_KEY = "cupagent:crypto:prices"
 REDIS_FIAT_KEY_PREFIX = "cupagent:fiat"
+# Crypto kline history — historical OHLC bars (Binance). Cached per
+# (symbol, interval, days). Bars are append-only historical data, so a
+# short TTL is fine.
+REDIS_CRYPTO_HISTORY_KEY_PREFIX = "cupagent:crypto:history"
+# Fiat history — daily rate series (Frankfurter / CBR archive).
+REDIS_FIAT_HISTORY_KEY_PREFIX = "cupagent:fiat:history"
 REDIS_GIFTWIKI_KEY_PREFIX = "cupagent:giftwiki"
 REDIS_GIFTATTRS_KEY_PREFIX = "cupagent:giftattrs"
 REDIS_MOOMIN_KEY_PREFIX = "cupagent:moomin"
@@ -43,6 +59,12 @@ CRYPTO_PRICES_TTL = 60        # 1 min — crypto is volatile
 FIAT_RATES_TTL = 21600        # 6h   — fiat updates once a day
 GIFTWIKI_DETAIL_TTL = 3600    # 1h
 GIFTATTRS_TTL = 86400        # 24h — gift attributes are immutable
+
+# Currency-history TTLs. Crypto klines are historical (append-only), so a
+# few minutes is plenty. Fiat daily series are immutable past dates, so
+# they can be cached for a day.
+CRYPTO_HISTORY_TTL = 300      # 5m — OHLC bars
+FIAT_HISTORY_TTL = 86400      # 24h — past daily rates are immutable
 
 # Moomin Market API cache TTLs.
 # Collections list changes rarely (new drops only) — cache aggressively.

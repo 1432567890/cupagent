@@ -173,6 +173,7 @@ async def _init_crypto_service(settings, redis_client) -> Any:
         binance_base_url=settings.BINANCE_BASE_URL,
         exchangerate_base_url=settings.EXCHANGERATE_BASE_URL,
         cbr_daily_url=settings.CBR_DAILY_URL,
+        frankfurter_base_url=settings.FRANKFURTER_BASE_URL,
     )
 
 

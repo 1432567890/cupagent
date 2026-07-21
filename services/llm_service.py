@@ -9,6 +9,7 @@ Supports tool calling — the model can invoke any of the registered tools:
     - ``get_floor_prices``       — gift floor prices from marketplaces
     - ``get_collection_floors``  — per-model/backdrop floor prices
     - ``convert_currency``       — crypto/fiat conversion (Binance + CBR)
+    - ``get_currency_history``   — crypto/fiat exchange-rate history
     - ``get_monochrome``         — GiftWiki monochrome classification
 
 Tools are dynamically registered based on which services are available.
@@ -296,6 +297,61 @@ _PRICE_HISTORY_TOOL: dict[str, Any] = {
     },
 }
 
+_CURRENCY_HISTORY_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "get_currency_history",
+        "description": (
+            "История курса криптовалюты или фиата: OHLC-свечи + сводка "
+            "(open/high/low/close, % изменения, направление тренда) + "
+            "ряд точек закрытия. Используй когда юзер спрашивает про "
+            "динамику курса: «как менялся биток», «история курса тонкоина», "
+            "«как рос доллар к рублю за месяц», «график евро», "
+            "«что было с криптой за неделю». Источники: Binance (крипта), "
+            "Frankfurter/ЕЦБ (USD/EUR/GBP/CNY...), ЦБ РФ (рубль/гривна/"
+            "тенге/лари/белруб). Покрывает fiat→fiat, crypto→crypto, "
+            "crypto→fiat и наоборот. Алиасы те же что у convert_currency."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string",
+                    "description": (
+                        "Исходная валюта/крипта: btc, gram, ton, eth, "
+                        "usd, rub, eur и т.д. Сленг ок: биток→btc, "
+                        "грам→gram, руб→rub."
+                    ),
+                },
+                "to": {
+                    "type": "string",
+                    "description": (
+                        "Целевая валюта/крипта для котировки. Например: "
+                        "from=btc to=rub → история битка в рублях. "
+                        "from=usd to=rub → история курса доллара."
+                    ),
+                },
+                "interval": {
+                    "type": "string",
+                    "enum": ["5m", "1h", "1d"],
+                    "description": (
+                        "Свечи для крипты: 5m/1h/1d (по умолчанию 1d). "
+                        "Фиат всегда дневной (поле игнорируется)."
+                    ),
+                },
+                "days": {
+                    "type": "integer",
+                    "description": (
+                        "Сколько дней истории (от 1 до лимита интервала). "
+                        "По умолчанию 7 для крипты, 30 для фиата."
+                    ),
+                },
+            },
+            "required": ["from", "to"],
+        },
+    },
+}
+
 
 def _build_tools(services: dict[str, Any]) -> list[dict[str, Any]]:
     """Build the tool list based on which services are available.
@@ -309,6 +365,7 @@ def _build_tools(services: dict[str, Any]) -> list[dict[str, Any]]:
         tools.append(_COLLECTION_ATTRIBUTES_TOOL)
     if services.get("crypto_service") is not None:
         tools.append(_CONVERT_TOOL)
+        tools.append(_CURRENCY_HISTORY_TOOL)
     if services.get("giftwiki_service") is not None:
         tools.append(_MONOCHROME_TOOL)
     if services.get("moomin_service") is not None:
@@ -322,6 +379,7 @@ _KNOWN_TOOL_NAMES: frozenset[str] = frozenset({
     "get_floor_prices",
     "get_collection_floors",
     "convert_currency",
+    "get_currency_history",
     "get_monochrome",
     "get_market_snapshot",
     "get_price_history",
@@ -419,6 +477,20 @@ class LLMService:
             "что было", "раньше стоил", "раньше стоила",
             "график", "chart", "trend", "history", "grew", "fell",
             "risen", "dropped", "performance",
+        ),
+        "currency-history": (
+            "как менялся курс", "история курса", "курс рос", "курс упал",
+            "курс росла", "курс вырос", "динамика курса", "график курса",
+            "курс за неделю", "курс за месяц", "курс за день",
+            "как рос биток", "как падал биток", "биток рос", "биток падал",
+            "тонкоин рос", "грам рос", "эфир рос", "как менялся биток",
+            "как менялся тон", "как менялся грам", "как менялся эфир",
+            "доллар рос", "доллар падал", "евро рос", "евро падал",
+            "рубль падал", "рубль креп", "как рос доллар", "как рос евро",
+            "история битка", "история тонкоина", "история эфира",
+            "история доллара", "история евро", "история рубля",
+            "что было с битком", "что было с тонкоином", "что было с курсом",
+            "btc trend", "eth trend", "ton trend", "gram trend",
         ),
     }
 
@@ -680,6 +752,10 @@ class LLMService:
                 )
             if fn_name == "convert_currency":
                 return await self._tool_convert_currency(
+                    services["crypto_service"], fn_args,
+                )
+            if fn_name == "get_currency_history":
+                return await self._tool_currency_history(
                     services["crypto_service"], fn_args,
                 )
             if fn_name == "get_monochrome":
@@ -1039,6 +1115,75 @@ class LLMService:
         )
         return json.dumps(result, ensure_ascii=False)
 
+    async def _tool_currency_history(
+        self, crypto_service: CryptoService, args: dict[str, Any],
+    ) -> str:
+        """Execute get_currency_history and return a trend summary JSON.
+
+        Mirrors :meth:`_tool_price_history`: the underlying service can
+        return hundreds of bars (Binance 1h over a year), so we summarize
+        into ``summary`` (open/high/low/close, % change, direction) plus
+        a downsampled close ``series`` of ~12 points. The model describes
+        the trend from the summary and, if useful, the series shape.
+        """
+        from_asset = args.get("from", "")
+        to_asset = args.get("to", "")
+        interval = args.get("interval") or "1d"
+        # Default days: 7 for crypto pairs, 30 for fiat-only.
+        days_raw = self._coerce_int(args.get("days"))
+
+        # Determine asset kinds to pick a sensible default lookback.
+        try:
+            from services.crypto_service import normalize_asset
+            _, from_kind = normalize_asset(from_asset)
+            _, to_kind = normalize_asset(to_asset)
+        except Exception:  # noqa: BLE001 — defensive, fall back to crypto default
+            from_kind = to_kind = "crypto"
+        fiat_only = from_kind == "fiat" and to_kind == "fiat"
+
+        if days_raw is None:
+            days = 30 if fiat_only else _DEFAULT_HISTORY_DAYS
+        else:
+            days = days_raw
+
+        try:
+            data = await crypto_service.get_currency_history(
+                from_asset, to_asset, days=days, interval=interval,
+            )
+        except Exception as e:  # noqa: BLE001 — surface to LLM
+            logger.warning("LLMService: get_currency_history failed: %s", e)
+            return json.dumps(
+                {"from": from_asset, "to": to_asset,
+                 "error": f"{type(e).__name__}: {e}"},
+                ensure_ascii=False,
+            )
+        if "error" in data:
+            return json.dumps(data, ensure_ascii=False)
+
+        bars = data.get("bars", [])
+        summary = _summarize_candles(bars)
+        series = _downsample_close_series(bars, _HISTORY_SERIES_POINTS)
+        return json.dumps(
+            {
+                "from": data.get("from", from_asset),
+                "to": data.get("to", to_asset),
+                "source": data.get("source"),
+                "interval": data.get("interval", interval),
+                "period_days": data.get("days", days),
+                "bars": len(bars),
+                "summary": summary,
+                "series": series,
+                "note": (
+                    "series — прореженный ряд точек закрытия [{t, close}]. "
+                    "опиши тренд по summary (direction + change_pct) и при "
+                    "необходимости форму по series. валюты пиши по правилам "
+                    "инструкции: крипта тикером (BTC, GRAM), фиат словами "
+                    "(рублей, долларов, евро)."
+                ),
+            },
+            ensure_ascii=False,
+        )
+
     async def _tool_get_monochrome(
         self,
         giftwiki_service: GiftWikiService,
@@ -1186,6 +1331,8 @@ def _service_supports(fn_name: str, services: dict[str, Any]) -> bool:
     if fn_name in ("get_floor_prices", "get_collection_floors"):
         return services.get("price_service") is not None
     if fn_name == "convert_currency":
+        return services.get("crypto_service") is not None
+    if fn_name == "get_currency_history":
         return services.get("crypto_service") is not None
     if fn_name == "get_monochrome":
         return services.get("giftwiki_service") is not None

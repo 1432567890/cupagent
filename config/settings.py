@@ -102,6 +102,9 @@ class Settings(BaseSettings):
     BINANCE_BASE_URL: str = "https://api.binance.com/api/v3"
     EXCHANGERATE_BASE_URL: str = "https://open.er-api.com/v6"
     CBR_DAILY_URL: str = "https://www.cbr-xml-daily.ru/daily_json.js"
+    # Frankfurter (ECB) — fiat history for USD/EUR/GBP/CNY/etc.
+    # CBR archive covers RUB and CIS currencies (UAH/KZT/GEL/BYN/...).
+    FRANKFURTER_BASE_URL: str = "https://api.frankfurter.app"
 
     # ── Derived ──
     @property
