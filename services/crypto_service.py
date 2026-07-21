@@ -157,6 +157,22 @@ DEFAULT_CRYPTO_INTERVAL = "1d"
 DEFAULT_CRYPTO_HISTORY_DAYS = 7
 DEFAULT_FIAT_HISTORY_DAYS = 30
 
+# CBR archive fetch caps.  The archive is one JSON file per business day,
+# so a 30-day window means up to 30 sequential HTTP requests — slow and
+# rate-limit-prone.  We cap the lookback and the overall wall-clock time
+# so the LLM tool call never blocks the chat for more than a few seconds.
+_CBR_ARCHIVE_MAX_DAYS = 14       # cap lookback (vs. 365 for Frankfurter)
+_CBR_ARCHIVE_TIMEOUT_S = 8.0     # hard cap per single archive fetch
+_CBR_ARCHIVE_OVERALL_S = 12.0    # cap for the whole N-day fan-out
+_CBR_ARCHIVE_CONCURRENCY = 4     # parallel archive fetches
+
+# Overall wall-clock cap for a single currency-history tool call.  This
+# wraps every provider path (Binance / Frankfurter / CBR) so a slow
+# upstream can never block the LLM chat long enough to trip the upstream
+# API's own read timeout.  If it fires, we return an ``error`` to the
+# LLM rather than letting the request hang.
+_HISTORY_OVERALL_TIMEOUT_S = 15.0
+
 
 def normalize_asset(raw: str) -> tuple[str, str]:
     """Resolve user-facing asset string to ``(canonical, kind)``.
@@ -582,6 +598,39 @@ class CryptoService:
             Compact dict ``{from, to, source, interval, days, bars}``.
             On failure ``{from, to, error}``.
         """
+        try:
+            async with asyncio.timeout(_HISTORY_OVERALL_TIMEOUT_S):
+                return await self._get_currency_history_impl(
+                    from_asset, to_asset, days=days, interval=interval,
+                )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "CryptoService: get_currency_history(%s→%s) timed out "
+                "after %ss",
+                from_asset, to_asset, _HISTORY_OVERALL_TIMEOUT_S,
+            )
+            return {
+                "from": from_asset, "to": to_asset,
+                "error": (
+                    "история курса временно недоступна — внешний источник "
+                    "не ответил вовремя, попробуй позже"
+                ),
+            }
+
+    async def _get_currency_history_impl(
+        self,
+        from_asset: str,
+        to_asset: str,
+        *,
+        days: int = DEFAULT_CRYPTO_HISTORY_DAYS,
+        interval: str = DEFAULT_CRYPTO_INTERVAL,
+    ) -> dict[str, Any]:
+        """Implementation of :meth:`get_currency_history` (without timeout).
+
+        Separated so :meth:`get_currency_history` can wrap the whole
+        routing/fetch pipeline in a single ``asyncio.timeout`` without
+        re-implementing the timeout in every provider path.
+        """
         from_canon, from_kind = normalize_asset(from_asset)
         to_canon, to_kind = normalize_asset(to_asset)
         if from_kind == "unknown" or to_kind == "unknown":
@@ -938,9 +987,20 @@ class CryptoService:
         Strategy: pick the currency that CBR lists directly (at least one
         of base/quote must be RUB or published by CBR). RUB is always the
         pivot.
+
+        Performance caps (see constants at top of file): the lookback is
+        clamped to ``_CBR_ARCHIVE_MAX_DAYS``, each individual archive
+        fetch has a per-request timeout, and the whole fan-out is wrapped
+        in an overall timeout — the CBR archive is a free service that
+        can be slow/flaky, so we'd rather return fewer days than block
+        the LLM chat for 60+ seconds.
         """
+        # Clamp lookback — CBR archive is one HTTP call per day.
+        effective_days = min(int(days or DEFAULT_FIAT_HISTORY_DAYS),
+                             _CBR_ARCHIVE_MAX_DAYS)
+
         cache_key = (
-            f"{REDIS_FIAT_HISTORY_KEY_PREFIX}:cbr:{base}:{quote}:{days}"
+            f"{REDIS_FIAT_HISTORY_KEY_PREFIX}:cbr:{base}:{quote}:{effective_days}"
         )
         cached = await self._redis.get(cache_key)
         if cached:
@@ -951,11 +1011,11 @@ class CryptoService:
 
         # Build the list of candidate dates (newest first).
         today = datetime.now(timezone.utc).date()
-        dates = [(today - timedelta(days=i)) for i in range(days)]
+        dates = [(today - timedelta(days=i)) for i in range(effective_days)]
         # CBR publishes on Russian business days; we fetch a few recent
         # dates and keep whichever resolve. Limit concurrent requests to
         # avoid hammering the free service.
-        semaphore = asyncio.Semaphore(5)
+        semaphore = asyncio.Semaphore(_CBR_ARCHIVE_CONCURRENCY)
 
         async def _one(d) -> tuple[str, dict[str, Decimal] | None]:
             url = CBR_ARCHIVE_URL_TEMPLATE.format(
@@ -963,17 +1023,33 @@ class CryptoService:
             )
             async with semaphore:
                 try:
-                    async with self.session.get(url) as resp:
-                        if resp.status != 200:
-                            return d.isoformat(), None
-                        data = await resp.json(content_type=None)
-                except aiohttp.ClientError as e:
+                    # Per-request timeout so a single hanging archive
+                    # file doesn't stall the whole fan-out.
+                    async with asyncio.timeout(_CBR_ARCHIVE_TIMEOUT_S):
+                        async with self.session.get(url) as resp:
+                            if resp.status != 200:
+                                return d.isoformat(), None
+                            data = await resp.json(content_type=None)
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                     logger.debug("CryptoService: CBR archive %s: %s", d, e)
                     return d.isoformat(), None
             return d.isoformat(), _cbr_to_rub_rates(data)
 
+        # Overall cap: if the CBR archive is being slow/unresponsive,
+        # bail out with whatever resolved so far instead of blocking
+        # the LLM chat indefinitely.
+        try:
+            async with asyncio.timeout(_CBR_ARCHIVE_OVERALL_S):
+                results = await asyncio.gather(*(_one(d) for d in dates))
+        except asyncio.TimeoutError:
+            logger.warning(
+                "CryptoService: CBR archive fan-out timed out after "
+                "%ss (%d/%d days requested)",
+                _CBR_ARCHIVE_OVERALL_S, effective_days, days,
+            )
+            return []
+
         # Gather and keep only days that resolved. newest first.
-        results = await asyncio.gather(*(_one(d) for d in dates))
         resolved = [(day, r) for day, r in results if r]
         if not resolved:
             return []

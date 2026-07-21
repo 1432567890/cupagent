@@ -879,6 +879,14 @@ class LLMService:
                     )
                     await asyncio.sleep(backoff)
                     backoff = min(backoff * 2, 30)
+                except asyncio.TimeoutError:
+                    last_error = f"timeout on {model_name}"
+                    logger.warning(
+                        "LLMService: %s (attempt %d)",
+                        last_error, attempt + 1,
+                    )
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, 30)
 
             # All retries failed for this model — try next in chain.
             backoff = _RETRY_BACKOFF_BASE
